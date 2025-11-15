@@ -31,7 +31,11 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+1. **Pine Script v6 Compliance** – Every plan must confirm TradingView scripts declare `//@version=6`, rely only on documented v6 APIs, and cite the Pine Script reference for any non-trivial function usage.
+2. **Modular Strategy Functions** – Architecture must expose reusable `entryCondition()`, `stopLossLogic()`, `takeProfitLogic()`, and supporting helpers so tasks can be scoped per function.
+3. **Deterministic Signals & Alerts** – Designs must state that signals evaluate on `barstate.isconfirmed`, avoid repainting, and pair each entry/exit with `alertcondition()` payloads that include pair, timeframe, and reason.
+4. **User Inputs & Cross-Pair Parity** – Plans must list all required `input.*` configurations (defaults, tooltips) and describe how identical parameters carry across every supported crypto pair.
+5. **Performance & Reliability Guardrails** – Each phase must account for optimized indicator calculations (no redundant `ta.*` calls) and document how execution stays under 100 ms per bar while emitting alerts within one close.
 
 ## Project Structure
 

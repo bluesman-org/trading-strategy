@@ -1,0 +1,2 @@
+# Rolling 14-Day PnL Validation (90-Day Window)
+# Columns: timeframe | window_start | window_end | net_pnl | status (positive/negative) | suspension_triggered | notes

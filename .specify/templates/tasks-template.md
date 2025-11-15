@@ -12,6 +12,8 @@ description: "Task list template for feature implementation"
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
+> **Constitution Guardrails**: Tasks must enforce Pine Script v6 usage (`//@version=6`), keep strategy logic inside reusable functions (`entryCondition()`, `stopLossLogic()`, `takeProfitLogic()`), confirm signals/alerts on `barstate.isconfirmed`, define consistent `input.*` controls + alert payloads across pairs, and include work to keep indicator calls efficient enough to stay under 100 ms per bar.
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)

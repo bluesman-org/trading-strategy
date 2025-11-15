@@ -1,0 +1,5 @@
+# Timeframe Switch Validation Log
+
+# Columns: timestamp | chart_symbol | previous_tf | new_tf | preset_applied (tier) | confirmation_bar_index | notes
+# Example:
+# 2025-11-15T10:00Z | BTCEUR | 60 | 240 | Tier 3->Tier 4 (EMA 55/144 -> 89/233) | 12345 | Parameters reloaded before next confirmed candle

@@ -1,50 +1,62 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report
+Version: 0.0.0 -> 1.0.0
+Modified Principles: All placeholders replaced with Pine Script-focused directives (I–V)
+Added sections: Execution Standards; Governance for Technical Decisions
+Removed sections: None
+Templates requiring updates: ✅ .specify/templates/plan-template.md, ✅ .specify/templates/spec-template.md, ✅ .specify/templates/tasks-template.md
+Follow-up TODOs: None
+-->
+
+# Trading Strategy Pine Script Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Pine Script v6 Compliance (NON-NEGOTIABLE)
+All TradingView artifacts MUST be authored in Pine Script v6, start with `//@version=6`, and rely exclusively on functions documented in the official reference (https://www.tradingview.com/pine-script-reference/v6). Every new construct requires an inline comment referencing the relevant manual section so reviewers can verify compliance quickly.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Modular Strategy Functions
+Strategy logic MUST be decomposed into reusable helpers such as `entryCondition()`, `stopLossLogic()`, `takeProfitLogic()`, risk filters, and alert payload builders. Each function must have a single responsibility so it can be independently unit-tested, reused across pairs, and reasoned about during reviews.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Deterministic Signals & Alerts
+Signals may only trigger on confirmed bars (`barstate.isconfirmed`) to eliminate repainting. Every entry and exit requires a paired `alertcondition()` with payloads that include pair, timeframe, and reason codes so downstream automation can consume alerts deterministically.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. User-Centric Inputs & Cross-Pair Parity
+All tunable parameters MUST be exposed through descriptive `input.*` controls with defaults, ranges, and tooltips. The same parameter set, naming, and defaults must remain identical across every supported crypto pair so that copying a profile never alters risk unintentionally.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### V. Performance & Reliability Guardrails
+Indicator calculations must be optimized (cache `ta.*` results, avoid redundant requests) so scripts execute well under 100 ms per bar on TradingView infrastructure. Alert delivery must occur within the closing bar, and any reliability fallback logic (e.g., re-arm checks) must be documented and tested.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## Execution Standards
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### Code Quality
+- Reference the Pine Script v6 manual when introducing any new function or pattern; undocumented behavior is prohibited.
+- Keep files ASCII-only and declare constants/variables with descriptive names that explain their trading purpose (e.g., `riskPct`, `atrStopMultiplier`).
+- Encapsulate reusable math or validation inside helper functions/modules instead of duplicating expressions across the script.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+### User Experience Consistency
+- Every `input.*` call must specify title, default, bounds/step, and tooltip text describing the control’s intent and relevant manual section.
+- Provide clear sections in the properties panel for timeframe tier selection, take-profit targets (3–6%), and volatility stop behavior so users can install and run without documentation.
+- Define matching entry/exit alerts whose payload schema is `pair|timeframe|signal|reason`; reuse this schema across all markets for consistency.
+- Confirm signals on bar close and document this determinism in the script header so users understand latency assumptions.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+### Performance Requirements
+- Cache expensive calculations (e.g., ATR, EMA) in variables per bar; never call `ta.*` redundantly within the same bar evaluation.
+- Audit scripts against TradingView’s execution quotas to ensure multi-symbol watchlists remain responsive; document expected runtime per bar (<100 ms) in the plan.
+- Ensure alerts fire within one bar close; add watchdog logic and logging comments if TradingView limits are approached.
+
+## Governance for Technical Decisions
+
+- **Documentation Alignment**: Before adopting any Pine Script feature, confirm it exists in the v6 reference and cite the URL in the code review description. No experimental or undocumented calls are allowed.
+- **Architecture Decision Records (ADRs)**: Capture why specific technical choices (e.g., `ta.atr` for stop sizing, `request.security()` frequency) were made, including the measured impact on execution time and drawdown control.
+- **Review Process**: Every change requires peer review that explicitly checks Pine Script v6 compliance, modularity, deterministic alerts, and performance budgeting. Reviews must link to the relevant constitution principles they verified.
+- **Change Control**: Inputs, alert payloads, and risk logic modifications must be versioned (update change log/comment header) and accompanied by rationale plus validation evidence (e.g., benchmark screenshots).
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+- This constitution supersedes prior process docs for TradingView strategy work. Any conflicts are resolved in favor of the stricter requirement.
+- Semantic versioning applies: MAJOR for breaking governance or principle rewrites, MINOR for new principles/sections, PATCH for clarifications.
+- Amendments require (a) documented rationale, (b) updated Sync Impact Report, (c) confirmation that plan/spec/tasks templates reflect the change, and (d) communication to all contributors before the next planning cycle.
+- Compliance reviews occur at `/speckit.plan` (Constitution Check gate), `/speckit.specify` validation, and during code review; violations block merges until resolved or formally waived with an ADR.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2025-11-15 | **Last Amended**: 2025-11-15

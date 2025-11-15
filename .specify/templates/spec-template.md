@@ -77,6 +77,8 @@
 
 ## Requirements *(mandatory)*
 
+> **Constitution Reminder**: Capture Pine Script v6 constraints (`//@version=6`, documented APIs only), modular function boundaries (entry/stop-loss/take-profit helpers), deterministic `barstate.isconfirmed` signal rules with paired `alertcondition()` payloads, user-facing inputs/tooltips that remain identical across pairs, and performance guardrails (optimized indicators, <100 ms execution, alerts within one bar close).
+
 <!--
   ACTION REQUIRED: The content in this section represents placeholders.
   Fill them out with the right functional requirements.
