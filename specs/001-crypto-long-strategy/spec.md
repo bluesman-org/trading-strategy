@@ -58,7 +58,7 @@ Risk management wants automated tracking of rolling two-week profitability so th
 
 ### Edge Cases
 
-- Timeframe switch while a trade is active; the strategy MUST keep the position open, immediately recalculate tier presets (EMA/ATR/momentum) for the new timeframe, and update stops/alerts before the next confirmed candle without issuing duplicate entries.
+- Timeframe switch while a trade is active; the strategy MUST keep the position open and, at the first bar close (`barstate.isconfirmed`) after the timeframe switch, recalculate tier presets (EMA/ATR/momentum) for the new timeframe and update stops/alerts before any new entries are considered. This aligns with Pine Script's execution model, which only allows logic updates at bar close, not mid-bar. Duplicate entries must still be prevented.
 - Price gaps that jump past the adaptive stop before execution; system must record slippage and recalc drawdown instantly.
 - Consecutive signals within the same candle; only the first compliant trade is allowed because pyramiding is forbidden.
 - Exchange downtime or missing candles in the 14-day window; profitability calculations must fall back to the last complete data set and flag data quality issues.
@@ -98,7 +98,7 @@ Risk management wants automated tracking of rolling two-week profitability so th
 | Tier 4 | 4h | 89 | 233 | 2.5× | > 0.02 | > 53 | 0.6 / 0.4 | Uses MACD bias more often on higher TF |
 | Tier 5 | 8h | 144 | 377 | 3.0× | > 0.01 | > 52 | 0.55 / 0.35 | Widest stops to accommodate overnight moves |
 
-Parameter changes must be applied before the next confirmed candle after a tier switch; helper inputs in the implementation need to read these presets verbatim.
+Parameter changes must be applied immediately upon detection of a tier switch (i.e., on the same bar as the switch is detected), so that all calculations and signals for that bar use the updated parameters. Helper inputs in the implementation need to read these presets verbatim.
 
 ### Key Entities *(include if feature involves data)*
 

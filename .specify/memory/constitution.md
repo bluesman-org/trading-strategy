@@ -13,7 +13,7 @@ Follow-up TODOs: None
 ## Core Principles
 
 ### I. Pine Script v6 Compliance (NON-NEGOTIABLE)
-All TradingView artifacts MUST be authored in Pine Script v6, start with `//@version=6`, and rely exclusively on functions documented in the official reference (https://www.tradingview.com/pine-script-reference/v6). Every new construct requires an inline comment referencing the relevant manual section so reviewers can verify compliance quickly.
+All TradingView artifacts MUST be authored in Pine Script v6, start with `//@version=6`, and rely exclusively on functions documented in the official reference (https://www.tradingview.com/pine-script-docs/en/v6/). Every new construct requires an inline comment referencing the relevant manual section so reviewers can verify compliance quickly.
 
 ### II. Modular Strategy Functions
 Strategy logic MUST be decomposed into reusable helpers such as `entryCondition()`, `stopLossLogic()`, `takeProfitLogic()`, risk filters, and alert payload builders. Each function must have a single responsibility so it can be independently unit-tested, reused across pairs, and reasoned about during reviews.

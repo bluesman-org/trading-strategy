@@ -144,7 +144,7 @@ tests/
 
 - Backtest matrix: BTC-EUR across 15m, 1h, 4h; ETH-EUR 1h; third pair 4h. Capture profits/drawdown/export to `tests/backtests/`.  
 - Alert QA: Configure webhook endpoints to log payloads; verify schema and <1 bar latency (SC-008).
-- Alert Latency QA: Replay alert logs for BTC-EUR and ETH-EUR, compute timestamp deltas vs candle close, and document proof that alerts reach operators within 1 minute (SC-005) in `tests/backtests/alert_latency.md`.
+- Alert Latency QA: Replay alert logs for BTC-EUR and ETH-EUR, compute timestamp deltas from candle close to receipt at the external webhook endpoint (operator notification), and document proof that alerts reach operators within 1 minute (SC-005) in `tests/backtests/alert_latency.md`. Explicitly measure end-to-end latency including external delivery, not just TradingView internal alert generation.
 - Timeframe Tier QA: Script or manually trigger timeframe switches on live charts, confirm the preset parameters apply before the next candle via log output, and store evidence in `tests/backtests/timeframe_switch.log` (SC-004 / FR-002).
 - Open-Trade Timeframe QA: Include at least one scenario where a position remains open during a timeframe switch, capture how stops and alerts are recalculated, and append the evidence to `tests/backtests/timeframe_switch.log`.
 - Installation QA: Install the Pine script on 15m, 1h, and 4h charts, capture compilation/backtest screenshots or HTML exports, and archive them under `tests/backtests/install/` to satisfy SC-006.
