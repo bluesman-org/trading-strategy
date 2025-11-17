@@ -81,12 +81,13 @@ Risk management wants automated tracking of rolling two-week profitability so th
 - **FR-011**: Strategy logic MUST be implemented as a TradingView Pine Script v6 strategy that users can install, configure (timeframe tier, TP range, risk toggles), and backtest directly within TradingView without external tooling.
 - **FR-012**: Every script MUST start with `//@version=6`, rely only on Pine Script v6-documented APIs, and include inline comments referencing the manual for non-trivial calls.
 - **FR-013**: Core logic MUST be encapsulated inside reusable helpers such as `entryCondition()`, `stopLossLogic()`, `takeProfitLogic()`, risk filters, and alert payload builders so pairs can share identical behavior.
-- **FR-014**: Signal evaluation MUST occur only on `barstate.isconfirmed`, and each entry/exit MUST emit an `alertcondition()` payload formatted as `pair|timeframe|signal|reason` for downstream automation.
+- **FR-014**: Signal evaluation MUST occur only on `barstate.isconfirmed`, and each entry/exit MUST emit an alert payload formatted as `pair|timeframe|signal|reason` for downstream automation. For strategies use `alert()` to push a runtime payload; `alertcondition()` is intended for indicators and is not supported for runtime-only strategies.
 - **FR-015**: All configurable parameters (timeframe tier, take-profit range, ATR multiples, enable toggles) MUST be exposed via `input.*` controls with descriptive titles, defaults, bounds/steps, and tooltips that remain identical across every supported pair.
 - **FR-016**: Indicator calculations (ATR, EMAs, structure lookbacks) MUST be cached per bar to keep execution below 100 ms and avoid redundant `ta.*` calls even when the strategy runs across multiple pairs concurrently.
 - **FR-017**: A trend filter MUST be active on every signal using either an EMA crossover (fast vs. slow tiers) or a MACD histogram direction check; only one of these is allowed per deployment and must be documented in inputs.
 - **FR-018**: Momentum confirmation MUST rely on either RSI or StochRSI thresholds (user-selectable) and MUST pass before any long entry is emitted.
 - **FR-019**: Optional Bollinger Band confirmation MUST be available; when enabled it requires price to be above the middle band on entries and relaxes automatically when disabled without altering other parameters.
+- **FR-020**: Backtest date range — Strategy MUST allow the user to restrict new trade entries to a date range using a single numeric `Backtest duration (days)` defaulting to 365 (1 year). Optionally, the user may enable a `Use custom backtest date range` boolean to specify explicit `Custom Backtest Start` and `Custom Backtest End` timestamps. The script must validate the custom range and disable new entries when the range is invalid.
 
 #### Timeframe Tier Presets
 

@@ -30,9 +30,9 @@ description: "Task plan for Long-Only Crypto Strategy implementation"
 
 **Purpose**: Establish repo structure and base files so later phases have stable targets.
 
-- [ ] T001 Create `pine/strategies/`, `docs/tradingview/`, and `tests/backtests/` directories per plan structure in the repo root.
-- [ ] T002 Scaffold `pine/strategies/long_only_crypto_strategy.pine` with `//@version=6`, `strategy()` declaration, and stub helper signatures matching constitution modules.
-- [ ] T003 [P] Create `docs/tradingview/alert_payloads.md` and `tests/backtests/README.md` placeholders summarizing upcoming alert schema references and regression export locations.
+- [X] T001 Create `pine/strategies/`, `docs/tradingview/`, and `tests/backtests/` directories per plan structure in the repo root.
+- [X] T002 Scaffold `pine/strategies/long_only_crypto_strategy.pine` with `//@version=6`, `strategy()` declaration, and stub helper signatures matching constitution modules.
+- [X] T003 [P] Create `docs/tradingview/alert_payloads.md` and `tests/backtests/README.md` placeholders summarizing upcoming alert schema references and regression export locations.
 
 ---
 
@@ -40,11 +40,11 @@ description: "Task plan for Long-Only Crypto Strategy implementation"
 
 **Purpose**: Implement shared structures, inputs, and utilities that every story depends on.
 
-- [ ] T004 Define Strategy Profile, Trade Ticket, Risk Ledger, and Market Snapshot state containers plus initializers inside `pine/strategies/long_only_crypto_strategy.pine` per `data-model.md`.
-- [ ] T005 [P] Implement indicator caching helpers (EMA tiers, MACD histogram, RSI, StochRSI, ATR, Bollinger) inside `pine/strategies/long_only_crypto_strategy.pine` so each value is computed once per bar.
-- [ ] T006 Wire the unified input panel (timeframe tier presets, trend filter selector, momentum selector, ATR multiplier, take-profit slider, Bollinger toggle, drawdown cap, pair enable) in `pine/strategies/long_only_crypto_strategy.pine` with tooltips referencing the Pine v6 manual.
-- [ ] T007 [P] Add `alertPayload()` helper plus reason code constants in `pine/strategies/long_only_crypto_strategy.pine`, then mirror the schema and codes in `docs/tradingview/alert_payloads.md` based on `contracts/alerts.md`.
-- [ ] T008 Implement baseline `riskGuards()` scaffolding in `pine/strategies/long_only_crypto_strategy.pine` to track starting capital, EUR 1,000 allocation enforcement, and placeholders for drawdown/rolling stats.
+- [X] T004 Define Strategy Profile, Trade Ticket, Risk Ledger, and Market Snapshot state containers plus initializers inside `pine/strategies/long_only_crypto_strategy.pine` per `data-model.md`.
+- [X] T005 [P] Implement indicator caching helpers (EMA tiers, MACD histogram, RSI, StochRSI, ATR, Bollinger) inside `pine/strategies/long_only_crypto_strategy.pine` so each value is computed once per bar.
+- [X] T006 Wire the unified input panel (timeframe tier presets, trend filter selector, momentum selector, ATR multiplier, take-profit slider, Bollinger toggle, drawdown cap, pair enable) in `pine/strategies/long_only_crypto_strategy.pine` with tooltips referencing the Pine v6 manual.
+- [X] T007 [P] Add `alertPayload()` helper plus reason code constants in `pine/strategies/long_only_crypto_strategy.pine`, then mirror the schema and codes in `docs/tradingview/alert_payloads.md` based on `contracts/alerts.md`.
+- [X] T008 Implement baseline `riskGuards()` scaffolding in `pine/strategies/long_only_crypto_strategy.pine` to track starting capital, EUR 1,000 allocation enforcement, and placeholders for drawdown/rolling stats.
 
 **Checkpoint**: Shared helpers, inputs, and docs exist—user story work can begin.
 
@@ -58,14 +58,14 @@ description: "Task plan for Long-Only Crypto Strategy implementation"
 
 ### Implementation for User Story 1
 
-- [ ] T009 [P] [US1] Implement `trendFilter()` in `pine/strategies/long_only_crypto_strategy.pine` with EMA crossover defaults and MACD option tied to timeframe tiers.
-- [ ] T010 [P] [US1] Implement `momentumCheck()` in `pine/strategies/long_only_crypto_strategy.pine` to evaluate RSI or StochRSI thresholds with cached values.
-- [ ] T011 [US1] Compose `entryCondition()` in `pine/strategies/long_only_crypto_strategy.pine` that merges trend, momentum, and optional Bollinger confirmations, returns reason codes, and only fires on `barstate.isconfirmed`.
-- [ ] T012 [US1] Implement `stopLossLogic()` in `pine/strategies/long_only_crypto_strategy.pine` that fuses ATR multiples with swing-low buffers and enforces exchange tick minimums.
-- [ ] T013 [US1] Implement `takeProfitLogic()` in `pine/strategies/long_only_crypto_strategy.pine` for configurable 3–6% exits defined via the input slider.
-- [ ] T014 [US1] Wire `strategy.entry`/`strategy.exit` blocks inside `pine/strategies/long_only_crypto_strategy.pine` to allocate exactly EUR 1,000, forbid pyramiding, and preload stops/TP from the helper outputs.
-- [ ] T015 [US1] Extend `riskGuards()` in `pine/strategies/long_only_crypto_strategy.pine` to enforce the 15% drawdown ceiling and persist Trade Ticket logs with reasons per FR-007/FR-009.
-- [ ] T016 [US1] Register `alertcondition()` blocks (LONG_ENTRY, EXIT_TP, EXIT_SL, EXIT_DRAWDOWN) in `pine/strategies/long_only_crypto_strategy.pine` that output the `pair|timeframe|signal|reason` payloads.
+- [X] T009 [P] [US1] Implement `trendFilter()` in `pine/strategies/long_only_crypto_strategy.pine` with EMA crossover defaults and MACD option tied to timeframe tiers.
+- [X] T010 [P] [US1] Implement `momentumCheck()` in `pine/strategies/long_only_crypto_strategy.pine` to evaluate RSI or StochRSI thresholds with cached values.
+- [X] T011 [US1] Compose `entryCondition()` in `pine/strategies/long_only_crypto_strategy.pine` that merges trend, momentum, and optional Bollinger confirmations, returns reason codes, and only fires on `barstate.isconfirmed`.
+- [X] T012 [US1] Implement `stopLossLogic()` in `pine/strategies/long_only_crypto_strategy.pine` that fuses ATR multiples with swing-low buffers and enforces exchange tick minimums.
+- [X] T013 [US1] Implement `takeProfitLogic()` in `pine/strategies/long_only_crypto_strategy.pine` for configurable 3–6% exits defined via the input slider.
+- [X] T014 [US1] Wire `strategy.entry`/`strategy.exit` blocks inside `pine/strategies/long_only_crypto_strategy.pine` to allocate exactly EUR 1,000, forbid pyramiding, and preload stops/TP from the helper outputs.
+- [X] T015 [US1] Extend `riskGuards()` in `pine/strategies/long_only_crypto_strategy.pine` to enforce the 15% drawdown ceiling and persist Trade Ticket logs with reasons per FR-007/FR-009.
+ - [X] T016 [US1] Register runtime alerts in `pine/strategies/long_only_crypto_strategy.pine` that output the `pair|timeframe|signal|reason` payloads using `alert()` (strategies should call `alert()`; `alertcondition()` applies to indicators).
 - [ ] T017 [P] [US1] Export a 30-day BTC-EUR Strategy Tester report to `tests/backtests/btc_eur_30d.report` and update validation steps within `specs/001-crypto-long-strategy/quickstart.md` with observed metrics.
 - [ ] T032 [US1] Simulate timeframe tier switches (including an active-position scenario) in `pine/strategies/long_only_crypto_strategy.pine`, log preset reload + stop recalculations, and store the transcript in `tests/backtests/timeframe_switch.log` to prove parameters update before the next confirmed candle.
 
@@ -100,7 +100,7 @@ description: "Task plan for Long-Only Crypto Strategy implementation"
 ### Implementation for User Story 3
 
 - [ ] T023 [US3] Implement rolling 14-day PnL accumulation inside `pine/strategies/long_only_crypto_strategy.pine`, storing metrics on the Risk Ledger structure.
-- [ ] T024 [US3] Extend `riskGuards()` in `pine/strategies/long_only_crypto_strategy.pine` to suspend/resume entries via `strategy.risk.allow_entry` when rolling PnL ≤ 0 and to unlock when recovered.
+ - [ ] T024 [US3] Extend `riskGuards()` in `pine/strategies/long_only_crypto_strategy.pine` to suspend/resume entries by setting `riskLedger.drawdownLock`/`riskLedger.rollingLossLock`. The script will gate `strategy.entry()` with those flags instead of using a non-existent boolean API.
 - [ ] T025 [US3] Render an on-chart monitoring table/labels in `pine/strategies/long_only_crypto_strategy.pine` showing enable state, drawdown %, rolling PnL, and last alert reason per FR-010.
 - [ ] T026 [US3] Add `SUSPEND_ROLLING_LOSS` and `RESUME_TRADING` alertconditions in `pine/strategies/long_only_crypto_strategy.pine` and extend `docs/tradingview/alert_payloads.md` with the monitoring payload examples.
 - [ ] T027 [US3] Document suspension/recovery procedures plus monitoring interpretation guidance inside `specs/001-crypto-long-strategy/quickstart.md`.

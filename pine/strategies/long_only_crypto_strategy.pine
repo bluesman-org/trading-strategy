@@ -1,0 +1,521 @@
+//@version=6
+// strategy(): https://www.tradingview.com/pine-script-reference/v6/#fun_strategy
+strategy("Long-Only Crypto Strategy", overlay=true, initial_capital=1000, default_qty_type=strategy.cash, default_qty_value=1000, pyramiding=0, calc_on_every_tick=false, commission_type = strategy.commission.percent, commission_value = 0.25)
+
+const float STARTING_CAPITAL = 1000.0
+const string DEFAULT_TIER = "Tier 3"
+const string SIGNAL_LONG_ENTRY = "LONG_ENTRY"
+const string SIGNAL_EXIT_TP = "EXIT_TP"
+const string SIGNAL_EXIT_SL = "EXIT_SL"
+const string SIGNAL_EXIT_DRAWDOWN = "EXIT_DRAWDOWN"
+const string SIGNAL_SUSPEND_ROLLING = "SUSPEND_ROLLING_LOSS"
+const string SIGNAL_RESUME = "RESUME_TRADING"
+const string REASON_EMA_RSI = "EMA_RSI_CONFIRMED"
+const string REASON_MACD_STOCH = "MACD_STOCH_CONFIRMED"
+const string REASON_BB_FAIL = "BOLLINGER_FILTER_FAIL"
+const string REASON_ATR_STOP = "ATR_STOP_HIT"
+const string REASON_TP_FIXED = "TP_FIXED"
+const string REASON_MAX_DD = "MAX_DRAWDOWN"
+const string REASON_ROLLING = "ROLLING_LOSS"
+const string REASON_MANUAL = "MANUAL_DISABLE"
+
+string timeframeTierInput = input.string("Auto (chart)", "Timeframe Tier", options=["Auto (chart)", "Tier 1", "Tier 2", "Tier 3", "Tier 4", "Tier 5"], tooltip="Applies preset parameters from the spec. Auto derives tiers from chart resolution as required by FR-002.")
+string trendFilterInput = input.string("EMA", "Trend Filter", options=["EMA", "MACD"], tooltip="EMA crossover uses ta.ema(): https://www.tradingview.com/pine-script-reference/v6/#fun_ta{dot}ema; MACD histogram uses ta.macd(): https://www.tradingview.com/pine-script-reference/v6/#fun_ta{dot}macd")
+string momentumModeInput = input.string("RSI", "Momentum Mode", options=["RSI", "StochRSI"], tooltip="RSI gate leverages ta.rsi(): https://www.tradingview.com/pine-script-reference/v6/#fun_ta{dot}rsi; StochRSI derives from RSI high/low windows per manual Section Momentum")
+float atrMultiplierInput = input.float(2.0, "ATR Multiplier Override", minval=1.0, maxval=4.0, step=0.25, tooltip="Adds headroom above tier defaults using ta.atr(): https://www.tradingview.com/pine-script-reference/v6/#fun_ta{dot}atr")
+float takeProfitInput = input.float(4.5, "Take-Profit %", minval=3.0, maxval=6.0, step=0.5, tooltip="Fixed exit enforced through strategy.exit(): https://www.tradingview.com/pine-script-reference/v6/#fun_strategy{dot}exit")
+bool bollingerConfirmInput = input.bool(false, "Bollinger Confirmation", tooltip="Requires price to stay above ta.bb() basis when true: https://www.tradingview.com/pine-script-reference/v6/#fun_ta{dot}bb")
+float drawdownCapInput = input.float(15.0, "Drawdown Cap %", minval=5.0, maxval=25.0, step=0.5, tooltip="Blocks entries when cumulative drawdown exceeds this value; this script uses internal riskLedger locks to block strategy.entry() calls (see riskGuards()).")
+bool pairEnableInput = input.bool(true, "Enable Pair", tooltip="Disable to emit MANUAL_DISABLE reason codes without removing the script.")
+// RSI override let tester run with a custom threshold for live debugging (set to your tier default)
+int rsiThresholdOverride = input.int(55, "RSI Threshold (override)", minval=10, maxval=90, step=1, tooltip="Override the tier default RSI threshold for ad-hoc live/backtest experiments.")
+// When true the script uses the strategy declared cash allocation (default_qty_value) as-is.
+// When false, it computes quantity as allocation/price and supplies it to strategy.entry() as contract units.
+bool useCashAllocation = input.bool(true, "Use cash allocation (default)", tooltip="When enabled the strategy uses the default cash allocation from strategy() instead of passing qty as contracts.")
+
+// Backtest date range inputs
+// Use this to limit new entries to a specified historical window. When disabled,
+// the script will backtest for `backtestDurationDays` from the current bar (default 365).
+bool useCustomBacktestRange = input.bool(false, "Use custom backtest date range", tooltip="Enable to manually pick start and end dates. Otherwise the script defaults to the last N days.")
+int backtestDurationDays = input.int(365, "Backtest duration (days)", minval=1, tooltip="Number of days to include in the backtest when not using a custom date range. Default = 365 (1 year).")
+int BACKTEST_MS_PER_DAY = 24 * 60 * 60 * 1000
+// Inputs for custom start/end: defaults are arbitrary but only used when `useCustomBacktestRange` is true.
+int customBacktestStart = input.time(timestamp(2024, 11, 18, 0, 0), "Custom Backtest Start", tooltip="If `Use custom backtest date range` is enabled this is the inclusive start timestamp.")
+int customBacktestEnd = input.time(timestamp(2025, 11, 17, 0, 0), "Custom Backtest End", tooltip="If `Use custom backtest date range` is enabled this is the inclusive end timestamp.")
+
+//@type
+type StrategyProfile
+    string symbol
+    string timeframe
+    string tierLabel
+    string trendMode
+    int fastEma
+    int slowEma
+    string momentumMode
+    float rsiThreshold
+    float stochKThreshold
+    float stochDThreshold
+    float atrMultiplier
+    float macdHistThreshold
+    float swingBufferTicks
+    float takeProfitPct
+    bool bollingerConfirm
+    bool enablePair
+
+//@type
+type TradeTicket
+    string ticketId
+    int entryBar
+    float entryPrice
+    float stopPrice
+    float takeProfitPrice
+    string entryReason
+    string exitReason
+    bool active
+
+//@type
+type RiskLedger
+    float startingCapital
+    float currentEquity
+    float rollingNetPnl
+    float maxDrawdownPct
+    bool drawdownLock
+    bool rollingLossLock
+    string lastAlertReason
+    float positionAllocation
+
+//@type
+type MarketSnapshot
+    float open
+    float high
+    float low
+    float close
+    float atr
+    float swingHigh
+    float swingLow
+    float emaFast
+    float emaSlow
+    float macd
+    float macdSignal
+    float macdHist
+    float rsi
+    float stochK
+    float stochD
+    float bbMid
+    float bbUpper
+    float bbLower
+
+//@type
+type AlertEvent
+    string payload
+    int barIndex
+    string channel
+
+var float emaFastSeries = na
+var float emaSlowSeries = na
+var int emaFastLength = na
+var int emaSlowLength = na
+
+//@type
+type SignalDecision
+    bool passed
+    string reason
+
+//@type
+type TargetLevel
+    float price
+    string reason
+
+detectTierFromChart() =>
+    // timeframe.in_seconds(): https://www.tradingview.com/pine-script-reference/v6/#fun_timeframe{dot}in_seconds
+    int resolutionSeconds = timeframe.in_seconds(timeframe.period)
+    resolutionSeconds <= 900 ? "Tier 1" :
+         resolutionSeconds <= 1800 ? "Tier 2" :
+         resolutionSeconds <= 3600 ? "Tier 3" :
+         resolutionSeconds <= 14400 ? "Tier 4" : "Tier 5"
+
+applyTierPreset(StrategyProfile profile, string tierLabel) =>
+    int fastLen = profile.fastEma
+    int slowLen = profile.slowEma
+    float atrMultiple = profile.atrMultiplier
+    float macdThreshold = profile.macdHistThreshold
+    float rsiThreshold = profile.rsiThreshold
+    float stochK = profile.stochKThreshold
+    float stochD = profile.stochDThreshold
+    if tierLabel == "Tier 1"
+        fastLen := 21
+        slowLen := 55
+        atrMultiple := 1.5
+        macdThreshold := 0.08
+        rsiThreshold := 58
+        stochK := 0.75
+        stochD := 0.55
+    else if tierLabel == "Tier 2"
+        fastLen := 34
+        slowLen := 89
+        atrMultiple := 1.75
+        macdThreshold := 0.05
+        rsiThreshold := 56
+        stochK := 0.70
+        stochD := 0.50
+    else if tierLabel == "Tier 3"
+        fastLen := 55
+        slowLen := 144
+        atrMultiple := 2.0
+        macdThreshold := 0.03
+        rsiThreshold := 55
+        stochK := 0.65
+        stochD := 0.45
+    else if tierLabel == "Tier 4"
+        fastLen := 89
+        slowLen := 233
+        atrMultiple := 2.5
+        macdThreshold := 0.02
+        rsiThreshold := 53
+        stochK := 0.60
+        stochD := 0.40
+    else
+        fastLen := 144
+        slowLen := 377
+        atrMultiple := 3.0
+        macdThreshold := 0.01
+        rsiThreshold := 52
+        stochK := 0.55
+        stochD := 0.35
+    profile.fastEma := fastLen
+    profile.slowEma := slowLen
+    profile.atrMultiplier := atrMultiple
+    profile.macdHistThreshold := macdThreshold
+    profile.rsiThreshold := rsiThreshold
+    profile.stochKThreshold := stochK
+    profile.stochDThreshold := stochD
+    profile.tierLabel := tierLabel
+    profile
+
+syncProfileFromInputs(StrategyProfile profile) =>
+    string selectedTier = timeframeTierInput == "Auto (chart)" ? detectTierFromChart() : timeframeTierInput
+    applyTierPreset(profile, selectedTier)
+    profile.symbol := syminfo.ticker
+    profile.timeframe := timeframe.period
+    profile.trendMode := trendFilterInput
+    profile.momentumMode := momentumModeInput
+    profile.takeProfitPct := takeProfitInput
+    profile.bollingerConfirm := bollingerConfirmInput
+    profile.enablePair := pairEnableInput
+    // Allow users to override the tier default RSI threshold via input.
+    float appliedRsiThreshold = profile.rsiThreshold
+    profile.rsiThreshold := float(rsiThresholdOverride)
+    // Only log when the override differs from the tier default to avoid spam
+    if appliedRsiThreshold != profile.rsiThreshold
+        log.info(str.format("RSI override applied: tier={0} override={1}", str.tostring(appliedRsiThreshold), str.tostring(profile.rsiThreshold)))
+    // math.max(): https://www.tradingview.com/pine-script-reference/v6/#fun_math{dot}max
+    profile.atrMultiplier := math.max(profile.atrMultiplier, atrMultiplierInput)
+    profile
+
+buildMarketSnapshot(StrategyProfile profile, float emaFastValue, float emaSlowValue) =>
+    // ta.atr(): https://www.tradingview.com/pine-script-reference/v6/#fun_ta{dot}atr
+    float atrValue = ta.atr(14)
+    // ta.macd(): https://www.tradingview.com/pine-script-reference/v6/#fun_ta{dot}macd
+    [macdValue, macdSignal, macdHist] = ta.macd(close, 12, 26, 9)
+    // ta.rsi(): https://www.tradingview.com/pine-script-reference/v6/#fun_ta{dot}rsi
+    float rsiValue = ta.rsi(close, 14)
+    // ta.lowest(): https://www.tradingview.com/pine-script-reference/v6/#fun_ta{dot}lowest
+    float rsiLowest = ta.lowest(rsiValue, 14)
+    // ta.highest(): https://www.tradingview.com/pine-script-reference/v6/#fun_ta{dot}highest
+    float rsiHighest = ta.highest(rsiValue, 14)
+    // math.max(): https://www.tradingview.com/pine-script-reference/v6/#fun_math{dot}max
+    float stochDenom = math.max(rsiHighest - rsiLowest, 0.0001)
+    float stochSeed = (rsiValue - rsiLowest) / stochDenom
+    // ta.sma(): https://www.tradingview.com/pine-script-reference/v6/#fun_ta{dot}sma
+    float stochKValue = ta.sma(stochSeed, 3)
+    float stochDValue = ta.sma(stochKValue, 3)
+    float swingHigh = ta.highest(high, 5)
+    float swingLow = ta.lowest(low, 5)
+    // ta.bb(): https://www.tradingview.com/pine-script-reference/v6/#fun_ta{dot}bb
+    [bbMid, bbUpper, bbLower] = ta.bb(close, 20, 2.0)
+    MarketSnapshot.new(open, high, low, close, atrValue, swingHigh, swingLow, emaFastValue, emaSlowValue, macdValue, macdSignal, macdHist, rsiValue, stochKValue, stochDValue, bbMid, bbUpper, bbLower)
+
+initStrategyProfile(string symbol, string timeframe) =>
+    StrategyProfile.new(symbol, timeframe, DEFAULT_TIER, "EMA", 55, 144, "RSI", 55, 0.65, 0.45, 2.0, 0.03, 1.0, 4.5, false, true)
+
+initTradeTicket() => TradeTicket.new("", na, na, na, na, "UNSET", "UNSET", false)
+
+initRiskLedger(float capital) => RiskLedger.new(capital, capital, 0.0, 0.0, false, false, "INIT", 1000.0)
+
+initMarketSnapshot() =>
+    MarketSnapshot.new(na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na)
+
+initAlertEvent() => AlertEvent.new("", na, "webhook")
+
+var StrategyProfile activeProfile = initStrategyProfile(syminfo.ticker, timeframe.period)
+var TradeTicket currentTicket = initTradeTicket()
+var RiskLedger riskLedger = initRiskLedger(STARTING_CAPITAL)
+var MarketSnapshot snapshot = initMarketSnapshot()
+var AlertEvent lastAlert = initAlertEvent()
+var string[] tradeLogs = array.new_string()
+var bool prevDrawdownLock = false
+var bool prevRollingLock = false
+
+trendFilter() =>
+    bool passed = false
+    string reason = "TREND_BLOCKED"
+    if activeProfile.trendMode == "EMA"
+        bool ready = not na(snapshot.emaFast) and not na(snapshot.emaSlow)
+        bool bullish = ready and snapshot.emaFast > snapshot.emaSlow
+        passed := bullish
+        reason := ready ? (bullish ? "EMA_TREND_UP" : "EMA_NO_CROSS") : "EMA_NOT_READY"
+        // Debugging log for trendFilter (moved after final `reason` assignment)
+        log.info(str.format("trendFilter[EMA]: ready={0} fast={1} slow={2} passed={3} reason={4}", str.tostring(ready), str.tostring(snapshot.emaFast), str.tostring(snapshot.emaSlow), str.tostring(passed), reason))
+    else
+        bool ready = not na(snapshot.macdHist)
+        bool bullish = ready and snapshot.macdHist >= activeProfile.macdHistThreshold
+        passed := bullish
+        reason := ready ? (bullish ? "MACD_TREND_UP" : "MACD_WEAK") : "MACD_NOT_READY"
+        // Debugging log for trendFilter (moved after final `reason` assignment)
+        log.info(str.format("trendFilter[MACD]: ready={0} hist={1} threshold={2} passed={3} reason={4}", str.tostring(ready), str.tostring(snapshot.macdHist), str.tostring(activeProfile.macdHistThreshold), str.tostring(passed), reason))
+    SignalDecision.new(passed, reason)
+
+momentumCheck() =>
+    bool passed = false
+    string reason = "MOMENTUM_BLOCKED"
+    if activeProfile.momentumMode == "RSI"
+        bool ready = not na(snapshot.rsi)
+        bool accepted = ready and snapshot.rsi >= activeProfile.rsiThreshold
+        passed := accepted
+        reason := ready ? (accepted ? "RSI_CONFIRMED" : "RSI_BELOW_THRESHOLD") : "RSI_NOT_READY"
+        // Debugging log for momentumCheck (RSI) - moved after `reason` assignment
+        log.info(str.format("momentumCheck[RSI]: ready={0} rsi={1} threshold={2} passed={3} reason={4}", str.tostring(ready), str.tostring(snapshot.rsi), str.tostring(activeProfile.rsiThreshold), str.tostring(passed), reason))
+    else
+        bool ready = not na(snapshot.stochK) and not na(snapshot.stochD)
+        bool accepted = ready and snapshot.stochK >= activeProfile.stochKThreshold and snapshot.stochD >= activeProfile.stochDThreshold
+        passed := accepted
+        reason := ready ? (accepted ? "STOCHRSI_CONFIRMED" : "STOCHRSI_BELOW_THRESHOLD") : "STOCHRSI_NOT_READY"
+        // Debugging log for momentumCheck (StochRSI) - moved after `reason` assignment
+        log.info(str.format("momentumCheck[StochRSI]: ready={0} stochK={1} stochD={2} kThr={3} dThr={4} passed={5} reason={6}", str.tostring(ready), str.tostring(snapshot.stochK), str.tostring(snapshot.stochD), str.tostring(activeProfile.stochKThreshold), str.tostring(activeProfile.stochDThreshold), str.tostring(passed), reason))
+    SignalDecision.new(passed, reason)
+
+entryCondition() =>
+    bool confirmedBar = barstate.isconfirmed
+    if not confirmedBar
+        // If the bar isn't confirmed yet, block entry
+        SignalDecision.new(false, "BAR_NOT_CONFIRMED")
+    else if not activeProfile.enablePair
+        // Pair disabled by user
+        SignalDecision.new(false, REASON_MANUAL)
+    else
+        bool riskLocked = riskLedger.drawdownLock or riskLedger.rollingLossLock
+        if riskLocked
+            string lockReason = riskLedger.drawdownLock ? REASON_MAX_DD : REASON_ROLLING
+            // Trace risk block events for debugging
+            log.info(str.format("entryCondition: riskLocked drawdownLock={0} rollingLossLock={1} lockReason={2}", str.tostring(riskLedger.drawdownLock), str.tostring(riskLedger.rollingLossLock), lockReason))
+            SignalDecision.new(false, lockReason)
+        else
+            SignalDecision trend = trendFilter()
+            if not trend.passed
+                SignalDecision.new(false, trend.reason)
+            else
+                SignalDecision momentum = momentumCheck()
+                if not momentum.passed
+                    // log momentum block
+                    log.info(str.format("entryCondition: momentum blocked reason={0}", momentum.reason))
+                    SignalDecision.new(false, momentum.reason)
+                else
+                    bool bollingerReady = not na(snapshot.bbMid)
+                    bool bollingerPass = not activeProfile.bollingerConfirm or (bollingerReady and snapshot.close > snapshot.bbMid)
+                    if not bollingerPass
+                        string bbReason = activeProfile.bollingerConfirm ? (bollingerReady ? REASON_BB_FAIL : "BOLLINGER_NOT_READY") : "BOLLINGER_DISABLED"
+                        log.info(str.format("entryCondition: bollinger block bbConfirm={0} close={1} bbMid={2} bbReason={3}", str.tostring(activeProfile.bollingerConfirm), str.tostring(snapshot.close), str.tostring(snapshot.bbMid), bbReason))
+                        SignalDecision.new(false, bbReason)
+                    else
+                        string successReason = activeProfile.trendMode == "MACD" and activeProfile.momentumMode == "StochRSI" ? REASON_MACD_STOCH : REASON_EMA_RSI
+                        SignalDecision.new(true, successReason)
+stopLossLogic() =>
+    float atrStop = na
+    if not na(snapshot.atr)
+        atrStop := snapshot.close - snapshot.atr * activeProfile.atrMultiplier
+    float swingStop = na
+    if not na(snapshot.swingLow)
+        // syminfo.mintick: https://www.tradingview.com/pine-script-reference/v6/#var_syminfo{dot}mintick
+        swingStop := snapshot.swingLow - activeProfile.swingBufferTicks * syminfo.mintick
+    float chosenStop = na
+    if not na(atrStop) and not na(swingStop)
+        // math.min(): https://www.tradingview.com/pine-script-reference/v6/#fun_math{dot}min
+        chosenStop := math.min(atrStop, swingStop)
+    else if not na(atrStop)
+        chosenStop := atrStop
+    else if not na(swingStop)
+        chosenStop := swingStop
+    float minTickStop = snapshot.close - (2 * syminfo.mintick)
+    if not na(chosenStop)
+        chosenStop := math.min(chosenStop, minTickStop)
+    TargetLevel.new(chosenStop, not na(chosenStop) ? "HYBRID_ATR_SWING" : "STOP_UNAVAILABLE")
+
+takeProfitLogic() =>
+    if na(snapshot.close)
+        // Close price unavailable; can't compute TP
+        TargetLevel.new(na, "TP_UNAVAILABLE")
+    else
+        float tpPrice = snapshot.close * (1 + activeProfile.takeProfitPct / 100.0)
+        TargetLevel.new(tpPrice, REASON_TP_FIXED)
+
+riskGuards(RiskLedger ledger, float drawdownCapPct) =>
+    // strategy.netprofit: https://www.tradingview.com/pine-script-reference/v6/#var_strategy{dot}netprofit
+    float netProfit = strategy.netprofit
+    ledger.currentEquity := ledger.startingCapital + netProfit
+    float drawdownValue = ledger.startingCapital - ledger.currentEquity
+    float drawdownPct = drawdownValue > 0 ? (drawdownValue / ledger.startingCapital) * 100.0 : 0.0
+    ledger.maxDrawdownPct := math.max(ledger.maxDrawdownPct, drawdownPct)
+    ledger.drawdownLock := drawdownPct >= drawdownCapPct
+    // timeframe.in_seconds(): https://www.tradingview.com/pine-script-reference/v6/#fun_timeframe{dot}in_seconds
+    int secondsPerBar = timeframe.in_seconds(timeframe.period)
+    int windowBars = math.max(math.round(14 * 86400 / secondsPerBar), 1)
+    // nz(): https://www.tradingview.com/pine-script-reference/v6/#fun_nz
+    float profitChange = nz(strategy.netprofit - nz(strategy.netprofit[1], 0.0), 0.0)
+    // math.sum(): https://www.tradingview.com/pine-script-reference/v6/#fun_math{dot}sum
+    // `ta.sum()` is not a valid Pine v6 function; using math.sum to compute a sliding sum
+    // over the 'windowBars' period of the per-bar net profit change.
+    float rollingNet = math.sum(profitChange, windowBars)
+    ledger.rollingNetPnl := rollingNet
+    // Avoid blocking entries on a neutral (zero) rolling PnL — only suspend on negative rolling PnL.
+    ledger.rollingLossLock := rollingNet < 0
+    // Debugging trace for risk guards — show computed values that affect entry gating.
+    // Use log.info: https://www.tradingview.com/pine-script-reference/v6/#fun_log{dot}info
+    log.info(str.format("riskGuards: startingCapital={0} netProfit={1} currentEquity={2} drawdownPct={3} rollingNet={4} drawdownLock={5} rollingLossLock={6}",
+        str.tostring(ledger.startingCapital), str.tostring(netProfit), str.tostring(ledger.currentEquity), str.tostring(drawdownPct), str.tostring(rollingNet), str.tostring(ledger.drawdownLock), str.tostring(ledger.rollingLossLock)))
+    ledger.lastAlertReason := ledger.drawdownLock ? REASON_MAX_DD : ledger.rollingLossLock ? REASON_ROLLING : ""
+    ledger.positionAllocation := 1000.0
+    ledger
+
+alertPayload(StrategyProfile profile, string signal, string reason) =>
+    profile.symbol + "|" + profile.timeframe + "|" + signal + "|" + reason
+
+activeProfile := syncProfileFromInputs(activeProfile)
+int fastLenCompute = math.max(activeProfile.fastEma, 1)
+bool fastLenChanged = fastLenCompute != emaFastLength
+emaFastLength := fastLenCompute
+float fastPrev = fastLenChanged or na(emaFastSeries[1]) ? close : emaFastSeries[1]
+emaFastSeries := fastPrev + (2.0 / (fastLenCompute + 1.0)) * (close - fastPrev)
+float emaFastValue = emaFastSeries
+int slowLenCompute = math.max(activeProfile.slowEma, 1)
+bool slowLenChanged = slowLenCompute != emaSlowLength
+emaSlowLength := slowLenCompute
+float slowPrev = slowLenChanged or na(emaSlowSeries[1]) ? close : emaSlowSeries[1]
+emaSlowSeries := slowPrev + (2.0 / (slowLenCompute + 1.0)) * (close - slowPrev)
+float emaSlowValue = emaSlowSeries
+snapshot := buildMarketSnapshot(activeProfile, emaFastValue, emaSlowValue)
+
+riskLedger := riskGuards(riskLedger, drawdownCapInput)
+bool fireEntryAlert = false
+string entryAlertReason = ""
+bool fireExitTpAlert = false
+bool fireExitSlAlert = false
+bool fireExitDrawdownAlert = false
+
+string entryId = "LONG_" + syminfo.ticker
+string exitId = "EXIT_" + syminfo.ticker
+// strategy.position_size: https://www.tradingview.com/pine-script-reference/v6/#var_strategy{dot}position_size
+bool flat = strategy.position_size == 0
+// Date range gating: allow new entries only if current bar timestamp is within user range
+int computedStart = useCustomBacktestRange ? customBacktestStart : time - backtestDurationDays * BACKTEST_MS_PER_DAY
+int computedEnd = useCustomBacktestRange ? customBacktestEnd : time
+bool backtestWindowValid = computedEnd >= computedStart
+if not backtestWindowValid
+    // If invalid window user input is provided, log and disable new entries
+    log.info(str.format("backtestWindow: invalid window start={0} end={1}", str.tostring(computedStart), str.tostring(computedEnd)))
+
+bool withinBacktestWindow = backtestWindowValid and time >= computedStart and time <= computedEnd
+
+// Allow opening positions only when within the selected backtest window
+if flat and withinBacktestWindow
+    SignalDecision entrySignal = entryCondition()
+    if entrySignal.passed
+        TargetLevel stopTarget = stopLossLogic()
+        TargetLevel takeProfitTarget = takeProfitLogic()
+        if not na(stopTarget.price) and not na(takeProfitTarget.price)
+            currentTicket.ticketId := str.format("{0}_{1}_{2}", syminfo.ticker, timeframe.period, str.tostring(bar_index))
+            currentTicket.entryBar := bar_index
+            currentTicket.entryPrice := snapshot.close
+            currentTicket.stopPrice := stopTarget.price
+            currentTicket.takeProfitPrice := takeProfitTarget.price
+            currentTicket.entryReason := entrySignal.reason
+            currentTicket.exitReason := ""
+            currentTicket.active := true
+            fireEntryAlert := true
+            entryAlertReason := entrySignal.reason
+            // Debug entry detail
+            log.info(str.format("strategy.entry(): pair={0} timeframe={1} ticket={2} price={3} stop={4} tp={5} reason={6}", syminfo.ticker, timeframe.period, currentTicket.ticketId, str.tostring(snapshot.close), str.tostring(currentTicket.stopPrice), str.tostring(currentTicket.takeProfitPrice), entrySignal.reason))
+            // strategy.entry(): https://www.tradingview.com/pine-script-reference/v6/#fun_strategy{dot}entry
+            if useCashAllocation
+                // Don't pass qty so the strategy uses the configured default_qty_type/default_qty_value (cash amount)
+                strategy.entry(entryId, strategy.long, comment=entrySignal.reason)
+            else
+                // Convert allocation (cash) to contract units and pass as qty; utils: allow fractional quantities for cryptos.
+                float contractQty = riskLedger.positionAllocation / math.max(snapshot.close, 0.00000001)
+                // Guard against zero quantity; pass at least one unit if computed value is extremely small.
+                strategy.entry(entryId, strategy.long, qty=math.max(contractQty, 0.0), comment=entrySignal.reason)
+            // Post-entry diagnostics: print position size and open trades count to Pine logs to confirm fills.
+            log.info(str.format("postEntry: pos_size={0} opentrades={1} avg_price={2}", str.tostring(strategy.position_size), str.tostring(strategy.opentrades), str.tostring(strategy.position_avg_price)))
+            // strategy.exit(): https://www.tradingview.com/pine-script-reference/v6/#fun_strategy{dot}exit
+            strategy.exit(exitId, from_entry=entryId, stop=stopTarget.price, limit=takeProfitTarget.price, comment=takeProfitTarget.reason)
+else
+    // Re-sync exits with updated stops when timeframe tiers/presets change mid-position.
+    TargetLevel trailingStop = stopLossLogic()
+    TargetLevel trailingTakeProfit = takeProfitLogic()
+    if not na(trailingStop.price) and not na(trailingTakeProfit.price)
+        strategy.exit(exitId, from_entry=entryId, stop=trailingStop.price, limit=trailingTakeProfit.price, comment=trailingTakeProfit.reason)
+
+bool flatPrev = nz(strategy.position_size[1], 0) == 0
+bool closedThisBar = flat and not flatPrev
+if closedThisBar and currentTicket.active
+    string exitReason = close >= nz(currentTicket.takeProfitPrice, close) ? REASON_TP_FIXED : close <= nz(currentTicket.stopPrice, close) ? REASON_ATR_STOP : "EXIT_UNKNOWN"
+    currentTicket.exitReason := exitReason
+    currentTicket.active := false
+    if exitReason == REASON_TP_FIXED
+        fireExitTpAlert := true
+    else if exitReason == REASON_ATR_STOP
+        fireExitSlAlert := true
+    string logLine = str.format("{0}|{1}|entry={2}|exit={3}|stop={4}|tp={5}", syminfo.ticker, timeframe.period, currentTicket.entryReason, exitReason, str.tostring(currentTicket.stopPrice), str.tostring(currentTicket.takeProfitPrice))
+    array.push(tradeLogs, logLine)
+    // Track exit events for debugging
+    log.info(str.format("tradeClosed: pair={0} timeframe={1} entry={2} exit={3} stop={4} tp={5}", syminfo.ticker, timeframe.period, currentTicket.entryReason, exitReason, str.tostring(currentTicket.stopPrice), str.tostring(currentTicket.takeProfitPrice)))
+
+bool drawdownTriggered = riskLedger.drawdownLock and not prevDrawdownLock
+bool rollingTriggered = riskLedger.rollingLossLock and not prevRollingLock
+// emit resume alert when both locks clear — compute BEFORE updating prev flags
+bool suspendedPrev = prevDrawdownLock or prevRollingLock
+bool suspendedNow = riskLedger.drawdownLock or riskLedger.rollingLossLock
+if (suspendedPrev and not suspendedNow)
+    alert(alertPayload(activeProfile, SIGNAL_RESUME, "RESUME_AFTER_LOCK_CLEARED"), alert.freq_once_per_bar_close)
+if drawdownTriggered
+    fireExitDrawdownAlert := true
+    // Log the drawdown lock to help diagnose why entries are suspended
+    log.info(str.format("drawdownTriggered: pair={0} timeframe={1} drawdownPct={2} maxDrawdownPct={3}", syminfo.ticker, timeframe.period, str.tostring((riskLedger.startingCapital - riskLedger.currentEquity) / riskLedger.startingCapital * 100.0), str.tostring(riskLedger.maxDrawdownPct)))
+if rollingTriggered
+    // Use dedicated suspend signal for rolling losses. Alert immediately when triggered.
+    alert(alertPayload(activeProfile, SIGNAL_SUSPEND_ROLLING, REASON_ROLLING), alert.freq_once_per_bar_close)
+    // Log rolling lock event
+    log.info(str.format("rollingTriggered: pair={0} timeframe={1} rollingNet={2}", syminfo.ticker, timeframe.period, str.tostring(riskLedger.rollingNetPnl)))
+
+// update prev flags for next iteration AFTER we've compared them
+prevDrawdownLock := riskLedger.drawdownLock
+prevRollingLock := riskLedger.rollingLossLock
+
+string resolvedEntryReason = entryAlertReason == "" ? REASON_EMA_RSI : entryAlertReason
+string entryMessage = alertPayload(activeProfile, SIGNAL_LONG_ENTRY, resolvedEntryReason)
+string exitTpMessage = alertPayload(activeProfile, SIGNAL_EXIT_TP, REASON_TP_FIXED)
+string exitSlMessage = alertPayload(activeProfile, SIGNAL_EXIT_SL, REASON_ATR_STOP)
+string exitDrawdownMessage = alertPayload(activeProfile, SIGNAL_EXIT_DRAWDOWN, REASON_MAX_DD)
+
+if fireEntryAlert
+    // Use freq once-per-bar-close to avoid duplicate alerts in rapid realtime updates.
+    alert(entryMessage, alert.freq_once_per_bar_close)
+if fireExitTpAlert
+    alert(exitTpMessage, alert.freq_once_per_bar_close)
+if fireExitSlAlert
+    alert(exitSlMessage, alert.freq_once_per_bar_close)
+if fireExitDrawdownAlert
+    alert(exitDrawdownMessage, alert.freq_once_per_bar_close)
+// emit resume alert when both locks clear
+if (suspendedPrev and not suspendedNow)
+    // resume trading - report which reason cleared
+    alert(alertPayload(activeProfile, SIGNAL_RESUME, "RESUME_AFTER_LOCK_CLEARED"), alert.freq_once_per_bar_close)

@@ -16,6 +16,18 @@
 | Drawdown Cap | 15% | Blocks new entries when breached. |
 | Pair Enable | true | Disable to prevent trading on the current symbol. |
 
+### Backtest Time Range (added)
+| Input | Default | Notes |
+|-------|---------|-------|
+| Use custom backtest date range | false | Enable to pick explicit start and end timestamps for the backtest. If disabled, the script backtests for the last N days below. |
+| Backtest duration (days) | 365 | Number of days to include when custom backtest range is disabled. Defaults to 365 (1 year). |
+| Custom Backtest Start | 2024-01-01 (example) | When custom range is enabled, select an inclusive start date. |
+| Custom Backtest End | 2025-01-01 (example) | When custom range is enabled, select an inclusive end date. |
+
+Notes:
+- Setting a custom date range limits new entries to the selected window. Exits will still be processed by the strategy so that positions can close normally outside the range when necessary.  
+- If the custom end date is earlier than the start date the script logs a warning and disables entries until fixed.
+
 Tooltips must reference Pine Script v6 manual sections for each indicator.
 
 ## 3. Validate Signals

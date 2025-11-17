@@ -1,0 +1,16 @@
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.swp
+
+# Logs and secrets
+*.log
+.env
+.env.*

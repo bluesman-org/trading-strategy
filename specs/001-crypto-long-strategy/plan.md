@@ -126,6 +126,13 @@ tests/
 - Wire `strategy.entry`, `strategy.exit`, and alertconditions (“LONG_ENTRY”, “EXIT_TP”, “EXIT_SL”, “EXIT_DRAWDOWN”) with `pair|timeframe|signal|reason` payload.  
 - Add backtest validation steps: TradingView Strategy Tester runs for 30 days BTC-EUR per timeframe tier, verifying SC-001–SC-003.
 
+**User Story 4 – Backtest Date Range (P1)**
+
+- Add a user input `Backtest duration (days)` defaulting to 365 (1 year). By default, the script will only open new entries that occur within the last N days from the current bar.  
+- Add `Use custom backtest date range` boolean. When enabled, the user can set inclusive `Custom Backtest Start` and `Custom Backtest End` timestamps using `input.time`. If a custom range is invalid (end < start) the script disables new entries and logs a message.  
+- Ensure alert generation and exits remain functional when outside the custom range so that positions can close normally.  
+- Document manual verification steps in `tests/backtests/backtest_date_range.md` and add Quickstart notes to `quickstart.md`.
+
 **User Story 2 – Cross-Pair Reuse (P2)**
 
 - Externalize pair symbol via `input.symbol` + enable toggle; ensure cloning retains identical parameter defaults.  
@@ -137,7 +144,7 @@ tests/
 
 - Implement rolling 14-day profitability accumulator (using `ta.change(strategy.netprofit)` + custom window).  
 - Build drawdown monitor referencing starting capital constant; block new entries and log/alert `ROLLING_LOSS` when thresholds breached.  
-- Surface monitoring info via `strategy.risk.allow_entry` toggles, `label.new` or `table` summaries, and ensure alerts fire when suspension toggles change.  
+  - Surface monitoring info via `label.new` or `table` summaries and ensure alerts fire when suspension toggles (managed by `riskLedger` flags) change.  
 - Document recovery procedure in quickstart (i.e., re-enable once profitability positive) and ensure state persists per chart.
 
 **Testing & Validation Plan**
